@@ -4,6 +4,7 @@ import threading
 import time
 import urllib
 import uuid
+import re
 
 import sublime
 import sublime_plugin
@@ -26,6 +27,10 @@ def plugin_unloaded():
     if websocket_instance:
         websocket_instance.close()
         websocket_instance = None
+
+
+def starts_with_whitespace(text):
+    return text[0].isspace() if text else False
 
 
 # Websocket client
@@ -65,59 +70,53 @@ class WebSocketHandler:
         if data.get("v") is not None and data.get("r") is not None:
             if data["r"] == active_request_id:
                 completion_fragment = data["v"]
-                if completion_fragment is not None:
-                    accumulated_completion = (
-                        accumulated_completion + completion_fragment
-                    )
-
                 self._process_completion(completion_fragment)
 
     def _process_completion(self, completion_fragment):
-        global active_request_id, accumulated_completion
+        global active_request_id, accumulated_completion, suggestion
         view = sublime.active_window().active_view()
-        cursor_position = view.sel()[0].begin()
-        text = view.substr(sublime.Region(0, cursor_position))
 
-        # Ensure the completion exceeds the base text
-        if len(accumulated_completion) <= len(text):
-            return
+        if completion_fragment is not None:
+            accumulated_completion += completion_fragment
 
         if completion_fragment is None:
-            # TODO return completion
+            # EOF reached, trigger completion with accumulated text
+            suggestion = accumulated_completion
+            view.run_command(
+                "trigger_ninetyfive_completion",
+                {"message": suggestion},
+            )
+
+            # Clear state
+            active_request_id = None
+            accumulated_completion = ""
             return
 
-        # Find the first non-whitespace character in the new completion text
-        first_non_whitespace_index = next(
-            (
-                i
-                for i, c in enumerate(accumulated_completion[len(text) :])
-                if not c.isspace()
-            ),
-            -1,
-        )
+        # Find the first non-whitespace character in the completion text
+        match = re.search(r"\S", accumulated_completion)
+        first_non_whitespace_index = match.start() if match else -1
         if first_non_whitespace_index == -1:
             return
-        first_non_whitespace_index += len(text)
 
-        # Ensure the text completes the remainder of the line
         newline_index = accumulated_completion.find("\n", first_non_whitespace_index)
         if newline_index == -1:
+            print("no newline")
             return
 
-        # Verify that the next line's indentation is present
         last_line = accumulated_completion[newline_index + 1 :]
-        second_non_whitespace_index = next(
-            (i for i, c in enumerate(last_line) if not c.isspace()), -1
-        )
+
+        match = re.search(r"\S", last_line)
+        second_non_whitespace_index = match.start() if match else -1
         if second_non_whitespace_index == -1:
+            print("no second non whitespace")
             return
 
-        global suggestion
-        suggestion = accumulated_completion[
-            cursor_position : newline_index + second_non_whitespace_index + 1
-        ]
+        cursor_position = view.sel()[0].begin()
+        _, col = view.rowcol(cursor_position)
+        start_index = col if starts_with_whitespace(accumulated_completion) else first_non_whitespace_index
+        end_index = newline_index + second_non_whitespace_index + 1
+        suggestion = accumulated_completion[start_index:end_index]
 
-        # Cancel the completion request
         self.send_message(
             json.dumps(
                 {
@@ -127,17 +126,15 @@ class WebSocketHandler:
             )
         )
 
-        # Check if criteria to show completion is met
-        print("ready to trigger completion...", time.time())
+        # Trigger completion
         view.run_command(
             "trigger_ninetyfive_completion",
-            {"message": "\n".join(suggestion)},
+            {"message": suggestion},
         )
 
-        # Clear request
+        # Clear state
         active_request_id = None
         accumulated_completion = ""
-        suggestion = ""
 
     def send_message(self, message: str):
         if self._ws_app and self._ws_app.sock and self._ws_app.sock.connected:
@@ -257,13 +254,16 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         print("send completion-request...", time.time())
 
     def on_query_completions(self, view, prefix, locations):
-        global suggestion
+        global suggestion, active_request_id
+        if not suggestion:
+            return None
+
         print("on_query_completions", time.time())
         completions = [
             sublime.CompletionItem(
-                accumulated_completion,
+                suggestion,
                 annotation="NinetyFive",
-                completion=accumulated_completion,
+                completion=suggestion,
                 completion_format=sublime.COMPLETION_FORMAT_TEXT,
                 kind=(
                     sublime.KIND_ID_COLOR_CYANISH,
@@ -273,7 +273,10 @@ class NinetyFiveListener(sublime_plugin.EventListener):
             )
         ]
 
+        # Clear the suggestion after creating completion item
+        suggestion = ""
+
         return sublime.CompletionList(
-            completions=completions,
+            completions,
             flags=sublime.DYNAMIC_COMPLETIONS | sublime.INHIBIT_WORD_COMPLETIONS,
         )
