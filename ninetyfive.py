@@ -84,7 +84,6 @@ class WebSocketHandler:
             suggestion = accumulated_completion
             view.run_command(
                 "trigger_ninetyfive_completion",
-                {"message": suggestion},
             )
 
             # Clear state
@@ -131,7 +130,6 @@ class WebSocketHandler:
         # Trigger completion
         view.run_command(
             "trigger_ninetyfive_completion",
-            {"message": suggestion},
         )
 
         # Clear state
@@ -157,7 +155,7 @@ class SetNinetyfiveStatusCommand(sublime_plugin.TextCommand):
 
 
 class TriggerNinetyfiveCompletionCommand(sublime_plugin.TextCommand):
-    def run(self, edit, message):
+    def run(self, edit):
         self.view.run_command(
             "auto_complete",
             {
