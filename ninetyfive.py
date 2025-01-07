@@ -228,24 +228,26 @@ class NinetyFiveListener(sublime_plugin.EventListener):
 
     def on_modified(self, view):
         global active_request_id, websocket_instance
-        # Get the text up to the cursor position
-        cursor_position = view.sel()[0].begin()
-        text_to_cursor = view.substr(sublime.Region(0, cursor_position))
 
-        # Send the text to the WebSocket
-        active_request_id = str(uuid.uuid4())
-        websocket_instance.send_message(
-            json.dumps(
-                {
-                    "requestId": active_request_id,
-                    "type": "completion-request",
-                    "prefix": text_to_cursor,
-                    "suffix": "",
-                    "path": "/fake/path",
-                    "workspace": "test",
-                }
+        # We restrict to the "code windows"
+        if not view.settings().get('is_widget') and view.window() and view.window().active_view() == view:
+            # Get the text up to the cursor position
+            cursor_position = view.sel()[0].begin()
+            text_to_cursor = view.substr(sublime.Region(0, cursor_position))
+
+            active_request_id = str(uuid.uuid4())
+            websocket_instance.send_message(
+                json.dumps(
+                    {
+                        "requestId": active_request_id,
+                        "type": "completion-request",
+                        "prefix": text_to_cursor,
+                        "suffix": "",
+                        "path": "/fake/path",
+                        "workspace": "test",
+                    }
+                )
             )
-        )
 
     def on_query_completions(self, view, prefix, locations):
         global suggestion, active_request_id
