@@ -212,16 +212,16 @@ class SetNinetyfiveKeyCommand(sublime_plugin.TextCommand):
         )
 
     def store_string(self, user_input):
-        settings = sublime.load_settings("Ninetyfive.sublime-settings")
+        settings = sublime.load_settings("NinetyFive.sublime-settings")
         settings.set("api_key", user_input)
-        sublime.save_settings("Ninetyfive.sublime-settings")
+        sublime.save_settings("NinetyFive.sublime-settings")
 
 
 class NinetyFiveListener(sublime_plugin.EventListener):
     def __init__(self):
         global websocket_instance
 
-        settings = sublime.load_settings("Ninetyfive.sublime-settings")
+        settings = sublime.load_settings("NinetyFive.sublime-settings")
         endpoint = settings.get("server_endpoint", "wss://api.ninetyfive.gg")
         websocket_instance = WebSocketHandler(endpoint)
         threading.Thread(target=websocket_instance.connect).start()

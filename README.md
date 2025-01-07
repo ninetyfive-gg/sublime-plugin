@@ -1,5 +1,5 @@
 # NinetyFive Sublime Text Plugin
-Ninetyfive is a simple code completion extension.
+NinetyFive is a simple code completion extension.
 
 - Code completions.
 - (Work in progress) Training based on your projects to improve completions.
