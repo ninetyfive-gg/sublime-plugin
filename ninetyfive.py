@@ -1,10 +1,10 @@
 import http.client
 import json
+import re
 import threading
 import time
 import urllib
 import uuid
-import re
 
 import sublime
 import sublime_plugin
@@ -100,7 +100,6 @@ class WebSocketHandler:
 
         newline_index = accumulated_completion.find("\n", first_non_whitespace_index)
         if newline_index == -1:
-            print("no newline")
             return
 
         last_line = accumulated_completion[newline_index + 1 :]
@@ -108,12 +107,15 @@ class WebSocketHandler:
         match = re.search(r"\S", last_line)
         second_non_whitespace_index = match.start() if match else -1
         if second_non_whitespace_index == -1:
-            print("no second non whitespace")
             return
 
         cursor_position = view.sel()[0].begin()
         _, col = view.rowcol(cursor_position)
-        start_index = col if starts_with_whitespace(accumulated_completion) else first_non_whitespace_index
+        start_index = (
+            col
+            if starts_with_whitespace(accumulated_completion)
+            else first_non_whitespace_index
+        )
         end_index = newline_index + second_non_whitespace_index + 1
         suggestion = accumulated_completion[start_index:end_index]
 
@@ -226,6 +228,7 @@ class SetNinetyfiveKeyCommand(sublime_plugin.TextCommand):
 class NinetyFiveListener(sublime_plugin.EventListener):
     def __init__(self):
         global websocket_instance
+        #TODO(juaoose) make the url configurableeeee!
         websocket_instance = WebSocketHandler("ws://100.65.232.81:8000")
         threading.Thread(target=websocket_instance.connect).start()
 
