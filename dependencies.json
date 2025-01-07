@@ -1,9 +1,7 @@
 {
 	"*": {
 		"*": [
-			"websockets",
-			"websocket-client",
-			"asyncio"
+			"websocket-client"
 		]
 	}
 }
