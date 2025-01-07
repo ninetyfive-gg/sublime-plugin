@@ -2,7 +2,6 @@ import http.client
 import json
 import re
 import threading
-import time
 import urllib
 import uuid
 
@@ -16,10 +15,6 @@ websocket_instance = None
 active_request_id = None
 accumulated_completion = ""
 suggestion = ""
-
-
-def plugin_loaded():
-    print("loaded")
 
 
 def plugin_unloaded():
@@ -144,7 +139,6 @@ class WebSocketHandler:
                 print(f"Failed to send message: {e}")
 
     def close(self):
-        print("try close")
         if self._ws_app:
             self._ws_app.close()
 
@@ -226,8 +220,10 @@ class SetNinetyfiveKeyCommand(sublime_plugin.TextCommand):
 class NinetyFiveListener(sublime_plugin.EventListener):
     def __init__(self):
         global websocket_instance
-        #TODO(juaoose) make the url configurableeeee!
-        websocket_instance = WebSocketHandler("ws://100.65.232.81:8000")
+
+        settings = sublime.load_settings("Ninetyfive.sublime-settings")
+        endpoint = settings.get("server_endpoint", "wss://api.ninetyfive.gg")
+        websocket_instance = WebSocketHandler(endpoint)
         threading.Thread(target=websocket_instance.connect).start()
 
     def on_modified(self, view):
@@ -237,9 +233,7 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         text_to_cursor = view.substr(sublime.Region(0, cursor_position))
 
         # Send the text to the WebSocket
-        print("generating uuid...", time.time())
         active_request_id = str(uuid.uuid4())
-        print("generated uuid...", time.time())
         websocket_instance.send_message(
             json.dumps(
                 {
@@ -252,14 +246,12 @@ class NinetyFiveListener(sublime_plugin.EventListener):
                 }
             )
         )
-        print("send completion-request...", time.time())
 
     def on_query_completions(self, view, prefix, locations):
         global suggestion, active_request_id
         if not suggestion:
             return None
 
-        print("on_query_completions", time.time())
         completions = [
             sublime.CompletionItem(
                 suggestion,
