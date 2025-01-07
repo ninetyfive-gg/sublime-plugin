@@ -1,0 +1,14 @@
+[
+    {
+        "caption": "Ninetyfive: Register an existing API key",
+        "command": "set_ninetyfive_key"
+    },
+    {
+        "caption": "Ninetyfive: Purchase an API key",
+        "command": "purchase_ninetyfive"
+    },
+    {
+        "caption": "Ninetyfive: Resend API key",
+        "command": "send_ninetyfive_key"
+    }
+]
