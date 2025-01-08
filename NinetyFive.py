@@ -145,7 +145,7 @@ class WebSocketHandler:
 
 class SetNinetyfiveStatusCommand(sublime_plugin.TextCommand):
     def run(self, edit, message):
-        self.view.set_status("ninetyfive-status", "Ninetfive: " + message)
+        self.view.set_status("ninetyfive-status", "Ninetyfive: " + message)
 
 
 class TriggerNinetyfiveCompletionCommand(sublime_plugin.TextCommand):
