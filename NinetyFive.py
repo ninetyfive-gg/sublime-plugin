@@ -2,6 +2,7 @@ import http.client
 import json
 import re
 import threading
+import time
 import urllib
 import uuid
 
@@ -11,6 +12,7 @@ import websocket
 
 # Since we're gonna use `plugin_unloaded` to close the connection, we need the ws handler available
 websocket_instance = None
+client_reference_id = None
 
 active_request_id = None
 accumulated_completion = ""
@@ -162,9 +164,57 @@ class TriggerNinetyfiveCompletionCommand(sublime_plugin.TextCommand):
 
 class PurchaseNinetyfiveCommand(sublime_plugin.TextCommand):
     def run(self, edit):
+        global client_reference_id, websocket_instance
+        client_reference_id = str(uuid.uuid4())
         self.view.window().run_command(
-            "open_url", {"url": "https://ninetyfive.gg/api/payment"}
+            "open_url",
+            {
+                "url": "https://ninetyfive.gg/api/payment?client_reference_id="
+                + client_reference_id
+            },
         )
+
+        threading.Thread(target=self.poll_for_api_key).start()
+
+    def poll_for_api_key(self):
+        global client_reference_id, websocket_instance
+        if not client_reference_id:
+            return
+
+        start_time = time.time()
+        timeout = 120
+        base_url = "ninetyfive.gg"
+
+        while time.time() - start_time < timeout:
+            try:
+                conn = http.client.HTTPSConnection(base_url)
+                conn.request("GET", f"/api/keys/{client_reference_id}")
+                response = conn.getresponse()
+
+                if response.status == 200:
+                    data = json.loads(response.read().decode())
+                    if data.get("api_key"):
+                        settings = sublime.load_settings("NinetyFive.sublime-settings")
+                        settings.set("api_key", data["api_key"])
+                        sublime.save_settings("NinetyFive.sublime-settings")
+
+                        if websocket_instance:
+                            websocket_instance.send_message(
+                                json.dumps(
+                                    {
+                                        "type": "set-api-key",
+                                        "key": data["api_key"],
+                                    }
+                                )
+                            )
+                        return
+
+                conn.close()
+                time.sleep(10)
+
+            except Exception as e:
+                print(f"Error polling for API key: {e}")
+                time.sleep(2)
 
 
 class SendNinetyfiveKeyCommand(sublime_plugin.TextCommand):
@@ -230,7 +280,11 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         global active_request_id, websocket_instance
 
         # We restrict to the "code windows"
-        if not view.settings().get('is_widget') and view.window() and view.window().active_view() == view:
+        if (
+            not view.settings().get("is_widget")
+            and view.window()
+            and view.window().active_view() == view
+        ):
             # Get the text up to the cursor position
             cursor_position = view.sel()[0].begin()
             text_to_cursor = view.substr(sublime.Region(0, cursor_position))
