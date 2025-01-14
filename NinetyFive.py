@@ -12,7 +12,7 @@ import websocket
 
 # Since we're gonna use `plugin_unloaded` to close the connection, we need the ws handler available
 websocket_instance = None
-client_reference_id = None
+payment_id = None
 
 active_request_id = None
 accumulated_completion = ""
@@ -164,21 +164,22 @@ class TriggerNinetyfiveCompletionCommand(sublime_plugin.TextCommand):
 
 class PurchaseNinetyfiveCommand(sublime_plugin.TextCommand):
     def run(self, edit):
-        global client_reference_id, websocket_instance
-        client_reference_id = str(uuid.uuid4())
+        global payment_id, websocket_instance
+        payment_id = str(uuid.uuid4())
+        client_identifier = "sublime_" + payment_id
         self.view.window().run_command(
             "open_url",
             {
                 "url": "https://ninetyfive.gg/api/payment?client_reference_id="
-                + client_reference_id
+                + client_identifier
             },
         )
 
         threading.Thread(target=self.poll_for_api_key).start()
 
     def poll_for_api_key(self):
-        global client_reference_id, websocket_instance
-        if not client_reference_id:
+        global payment_id, websocket_instance
+        if not payment_id:
             return
 
         start_time = time.time()
@@ -188,7 +189,7 @@ class PurchaseNinetyfiveCommand(sublime_plugin.TextCommand):
         while time.time() - start_time < timeout:
             try:
                 conn = http.client.HTTPSConnection(base_url)
-                conn.request("GET", f"/api/keys/{client_reference_id}")
+                conn.request("GET", f"/api/keys/{payment_id}")
                 response = conn.getresponse()
 
                 if response.status == 200:
