@@ -73,6 +73,7 @@ class WebSocketHandler:
         global active_request_id, accumulated_completion, suggestion
         view = sublime.active_window().active_view()
 
+        print("some completion")
         if completion_fragment is not None:
             accumulated_completion += completion_fragment
 
@@ -92,10 +93,13 @@ class WebSocketHandler:
         match = re.search(r"\S", accumulated_completion)
         first_non_whitespace_index = match.start() if match else -1
         if first_non_whitespace_index == -1:
+            print("break 1")
             return
 
         newline_index = accumulated_completion.find("\n", first_non_whitespace_index)
+        print(accumulated_completion)
         if newline_index == -1:
+            print("break 2")
             return
 
         last_line = accumulated_completion[newline_index + 1 :]
@@ -103,6 +107,7 @@ class WebSocketHandler:
         match = re.search(r"\S", last_line)
         second_non_whitespace_index = match.start() if match else -1
         if second_non_whitespace_index == -1:
+            print("break 3")
             return
 
         cursor_position = view.sel()[0].begin()
@@ -273,7 +278,7 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         global websocket_instance
 
         settings = sublime.load_settings("NinetyFive.sublime-settings")
-        endpoint = settings.get("server_endpoint", "wss://api.ninetyfive.gg")
+        endpoint = settings.get("server_endpoint", "ws://100.118.7.128:8000")
         websocket_instance = WebSocketHandler(endpoint)
         threading.Thread(target=websocket_instance.connect).start()
 
@@ -289,20 +294,75 @@ class NinetyFiveListener(sublime_plugin.EventListener):
             # Get the text up to the cursor position
             cursor_position = view.sel()[0].begin()
             text_to_cursor = view.substr(sublime.Region(0, cursor_position))
-
-            active_request_id = str(uuid.uuid4())
-            websocket_instance.send_message(
-                json.dumps(
-                    {
-                        "requestId": active_request_id,
-                        "type": "completion-request",
-                        "prefix": text_to_cursor,
-                        "suffix": "",
-                        "path": "/fake/path",
-                        "workspace": "test",
-                    }
-                )
+            text_after_cursor = view.substr(
+                sublime.Region(cursor_position, view.size())
             )
+
+        sel = view.sel()[0]
+        position = sel.begin()
+
+        # Get prefix
+        prefix = None
+        bos = False
+        for i in range(view.rowcol(position)[0]):
+            region = sublime.Region(view.text_point(i, 0), position)
+            text = view.substr(region)
+            if len(text) >= 4096:
+                continue
+            prefix = text
+            bos = i == 0
+            break
+
+        if not prefix:
+            region = sublime.Region(
+                view.text_point(view.rowcol(position)[0], 0), position
+            )
+            prefix = view.substr(region)
+            bos = view.rowcol(position)[0] == 0
+
+        if len(prefix) > 4096:
+            prefix = prefix[-4096:]
+
+        # Get suffix
+        suffix = None
+        eos = False
+        for i in range(view.rowcol(position)[0], view.rowcol(view.size())[0] + 1):
+            region = sublime.Region(
+                position, view.text_point(i, view.rowcol(view.size())[1])
+            )
+            text = view.substr(region)
+            if len(text) >= 2048:
+                break
+            suffix = text
+            eos = i == view.rowcol(view.size())[0]
+
+        if not suffix:
+            line_end = view.line(position).end()
+            region = sublime.Region(position, line_end)
+            suffix = view.substr(region)
+            eos = view.rowcol(position)[0] == view.rowcol(view.size())[0]
+
+        if len(suffix) > 2048:
+            suffix = suffix[:2048]
+
+        active_request_id = str(uuid.uuid4())
+        directory = view.window().folders()[0]
+        print("send")
+        websocket_instance.send_message(
+            json.dumps(
+                {
+                    "requestId": active_request_id,
+                    "type": "completion-request",
+                    "prefix": prefix,
+                    "suffix": suffix,
+                    "path": view.file_name(),
+                    "repo": directory if directory else "unknown",
+                    "folderId": view.file_name(),
+                    "eos": eos,
+                    "bos": False,
+                }
+            )
+        )
 
     def on_query_completions(self, view, prefix, locations):
         global suggestion, active_request_id
