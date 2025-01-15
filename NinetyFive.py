@@ -57,24 +57,50 @@ class WebSocketHandler:
         print(f"Websocket closed with code {close_status_code} {message}")
 
     def _on_message(self, ws, message):
-        global active_request_id, accumulated_completion, suggestion
+        global active_request_id, suggestion
         data = json.loads(message)
         if data.get("type") == "subscription-info":
             message = "Premium" if data["isPaid"] else "Free"
             sublime.active_window().active_view().run_command(
                 "set_ninetyfive_status", {"message": message}
             )
-        if data.get("v") is not None and data.get("r") is not None:
+        if data.get("r") is not None:
             if data["r"] == active_request_id:
                 completion_fragment = data["v"]
-                self._process_completion(completion_fragment)
+                if isinstance(completion_fragment, str):
+                    for char in completion_fragment:
+                        self._process_completion(char)
+                else:
+                    self._process_completion(completion_fragment)
 
     def _process_completion(self, completion_fragment):
         global active_request_id, accumulated_completion, suggestion
         view = sublime.active_window().active_view()
 
         if completion_fragment is not None:
-            accumulated_completion += completion_fragment
+            if len(accumulated_completion) == 0 and completion_fragment is None:
+                self.send_message(
+                    json.dumps(
+                        {
+                            "type": "cancel-completion-request",
+                            "requestId": active_request_id,
+                        }
+                    )
+                )
+                return
+            elif len(accumulated_completion) > 0 and completion_fragment == "\n":
+                suggestion = accumulated_completion
+                view.run_command(
+                    "trigger_ninetyfive_completion",
+                )
+
+                # Clear state
+                active_request_id = None
+                accumulated_completion = ""
+                return
+            else:
+                accumulated_completion += completion_fragment
+                return
 
         if completion_fragment is None:
             # EOF reached, trigger completion with accumulated text
@@ -88,50 +114,7 @@ class WebSocketHandler:
             accumulated_completion = ""
             return
 
-        # Find the first non-whitespace character in the completion text
-        match = re.search(r"\S", accumulated_completion)
-        first_non_whitespace_index = match.start() if match else -1
-        if first_non_whitespace_index == -1:
-            return
-
-        newline_index = accumulated_completion.find("\n", first_non_whitespace_index)
-        if newline_index == -1:
-            return
-
-        last_line = accumulated_completion[newline_index + 1 :]
-
-        match = re.search(r"\S", last_line)
-        second_non_whitespace_index = match.start() if match else -1
-        if second_non_whitespace_index == -1:
-            return
-
-        cursor_position = view.sel()[0].begin()
-        _, col = view.rowcol(cursor_position)
-        start_index = (
-            col
-            if starts_with_whitespace(accumulated_completion)
-            else first_non_whitespace_index
-        )
-        end_index = newline_index + second_non_whitespace_index + 1
-        suggestion = accumulated_completion[start_index:end_index]
-
-        self.send_message(
-            json.dumps(
-                {
-                    "type": "cancel-completion-request",
-                    "requestId": active_request_id,
-                }
-            )
-        )
-
-        # Trigger completion
-        view.run_command(
-            "trigger_ninetyfive_completion",
-        )
-
-        # Clear state
-        active_request_id = None
-        accumulated_completion = ""
+        return
 
     def send_message(self, message: str):
         if self._ws_app and self._ws_app.sock and self._ws_app.sock.connected:
@@ -156,7 +139,7 @@ class TriggerNinetyfiveCompletionCommand(sublime_plugin.TextCommand):
             "auto_complete",
             {
                 "disable_auto_insert": True,
-                "api_completions_only": False,
+                "api_completions_only": True,
                 "next_completion_if_showing": False,
             },
         )
@@ -273,12 +256,14 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         global websocket_instance
 
         settings = sublime.load_settings("NinetyFive.sublime-settings")
-        endpoint = settings.get("server_endpoint", "wss://api.ninetyfive.gg")
+        endpoint = settings.get("server_endpoint", "ws://100.118.7.128:8000")
         websocket_instance = WebSocketHandler(endpoint)
         threading.Thread(target=websocket_instance.connect).start()
 
     def on_modified(self, view):
-        global active_request_id, websocket_instance
+        global active_request_id, websocket_instance, accumulated_completion, suggestion
+        accumulated_completion = ""
+        suggestion = ""
 
         # We restrict to the "code windows"
         if (
@@ -289,26 +274,93 @@ class NinetyFiveListener(sublime_plugin.EventListener):
             # Get the text up to the cursor position
             cursor_position = view.sel()[0].begin()
             text_to_cursor = view.substr(sublime.Region(0, cursor_position))
+            text_after_cursor = view.substr(
+                sublime.Region(cursor_position, view.size())
+            )
 
-            active_request_id = str(uuid.uuid4())
+        sel = view.sel()[0]
+        position = sel.begin()
+
+        # Get prefix
+        prefix = None
+        bos = False
+        for i in range(view.rowcol(position)[0]):
+            region = sublime.Region(view.text_point(i, 0), position)
+            text = view.substr(region)
+            if len(text) >= 4096:
+                continue
+            prefix = text
+            bos = i == 0
+            break
+
+        if not prefix:
+            region = sublime.Region(
+                view.text_point(view.rowcol(position)[0], 0), position
+            )
+            prefix = view.substr(region)
+            bos = view.rowcol(position)[0] == 0
+
+        if len(prefix) > 4096:
+            prefix = prefix[-4096:]
+
+        # Get suffix
+        suffix = None
+        eos = False
+        for i in range(view.rowcol(position)[0], view.rowcol(view.size())[0] + 1):
+            region = sublime.Region(
+                position, view.text_point(i, view.rowcol(view.size())[1])
+            )
+            text = view.substr(region)
+            if len(text) >= 2048:
+                break
+            suffix = text
+            eos = i == view.rowcol(view.size())[0]
+
+        if not suffix:
+            line_end = view.line(position).end()
+            region = sublime.Region(position, line_end)
+            suffix = view.substr(region)
+            eos = view.rowcol(position)[0] == view.rowcol(view.size())[0]
+
+        if len(suffix) > 2048:
+            suffix = suffix[:2048]
+
+        # Cancel everything else!
+        if active_request_id:
             websocket_instance.send_message(
                 json.dumps(
                     {
+                        "type": "cancel-completion-request",
                         "requestId": active_request_id,
-                        "type": "completion-request",
-                        "prefix": text_to_cursor,
-                        "suffix": "",
-                        "path": "/fake/path",
-                        "workspace": "test",
                     }
                 )
             )
+
+        active_request_id = str(uuid.uuid4())
+        directory = view.window().folders()[0]
+        print("send", prefix)
+        websocket_instance.send_message(
+            json.dumps(
+                {
+                    "requestId": active_request_id,
+                    "type": "completion-request",
+                    "prefix": prefix,
+                    "suffix": suffix,
+                    "path": view.file_name(),
+                    "repo": directory if directory else "unknown",
+                    "folderId": view.file_name(),
+                    "eos": eos,
+                    "bos": False,
+                }
+            )
+        )
 
     def on_query_completions(self, view, prefix, locations):
         global suggestion, active_request_id
         if not suggestion:
             return None
 
+        print("suggestion", suggestion)
         completions = [
             sublime.CompletionItem(
                 suggestion,
