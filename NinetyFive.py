@@ -78,6 +78,10 @@ class WebSocketHandler:
         view = sublime.active_window().active_view()
 
         if completion_fragment is not None:
+            print(
+                accumulated_completion.encode("utf-8"),
+                completion_fragment.encode("utf-8"),
+            )
             if len(accumulated_completion) == 0 and completion_fragment is None:
                 self.send_message(
                     json.dumps(
@@ -88,11 +92,15 @@ class WebSocketHandler:
                     )
                 )
                 return
-            elif len(accumulated_completion) > 0 and completion_fragment == "\n":
+            elif len(accumulated_completion) > 0 and "\n" in completion_fragment:
+                accumulated_completion += completion_fragment[
+                    : completion_fragment.index("\n") + 1
+                ]
                 suggestion = accumulated_completion
-                view.run_command(
-                    "trigger_ninetyfive_completion",
-                )
+                if len(suggestion.strip()) > 0:
+                    view.run_command(
+                        "trigger_ninetyfive_completion",
+                    )
 
                 # Clear state
                 active_request_id = None
@@ -105,9 +113,10 @@ class WebSocketHandler:
         if completion_fragment is None:
             # EOF reached, trigger completion with accumulated text
             suggestion = accumulated_completion
-            view.run_command(
-                "trigger_ninetyfive_completion",
-            )
+            if len(suggestion.strip()) > 0:
+                view.run_command(
+                    "trigger_ninetyfive_completion",
+                )
 
             # Clear state
             active_request_id = None
@@ -256,8 +265,14 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         global websocket_instance
 
         settings = sublime.load_settings("NinetyFive.sublime-settings")
-        endpoint = settings.get("server_endpoint", "ws://100.118.7.128:8000")
-        websocket_instance = WebSocketHandler(endpoint)
+        endpoint = settings.get("server_endpoint", "wss://api.ninetyfive.gg")
+        user_id = settings.get("user_id", str(uuid.uuid4()))
+        api_key = settings.get("api_key", "")
+        settings.set("user_id", user_id)
+
+        websocket_instance = WebSocketHandler(
+            f"{endpoint}?user_id={user_id}&api_key={api_key}"
+        )
         threading.Thread(target=websocket_instance.connect).start()
 
     def on_modified(self, view):
@@ -337,9 +352,8 @@ class NinetyFiveListener(sublime_plugin.EventListener):
             )
 
         active_request_id = str(uuid.uuid4())
-        directory = view.window().folders()[0]
-        print("send", prefix)
-        #TODO(juaoose): eos, bos, repo and also user_id on initial conn query params
+        if view.window():
+            directory = view.window().folders()[0]
         websocket_instance.send_message(
             json.dumps(
                 {
@@ -351,7 +365,7 @@ class NinetyFiveListener(sublime_plugin.EventListener):
                     "repo": directory if directory else "unknown",
                     "folderId": view.file_name(),
                     "eos": eos,
-                    "bos": False,
+                    "bos": bos,
                 }
             )
         )
