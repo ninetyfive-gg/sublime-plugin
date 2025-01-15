@@ -339,6 +339,7 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         active_request_id = str(uuid.uuid4())
         directory = view.window().folders()[0]
         print("send", prefix)
+        #TODO(juaoose): eos, bos, repo and also user_id on initial conn query params
         websocket_instance.send_message(
             json.dumps(
                 {
