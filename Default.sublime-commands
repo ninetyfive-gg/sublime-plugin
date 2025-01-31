@@ -10,5 +10,13 @@
     {
         "caption": "NinetyFive: Resend API key",
         "command": "send_ninetyfive_key"
+    },
+    {
+        "caption": "NinetyFive: Settings",
+        "command": "edit_settings",
+        "args": {
+            "base_file": "${packages}/ninetyfive/Ninetyfive.sublime-settings",
+            "default": "{\n\t$0\n}\n"
+        }
     }
 ]
