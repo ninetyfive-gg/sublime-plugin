@@ -1,11 +1,10 @@
 import http.client
 import json
-import re
 import threading
 import time
-import urllib
 import uuid
 
+import requests
 import sublime
 import sublime_plugin
 import websocket
@@ -176,15 +175,13 @@ class PurchaseNinetyFiveCommand(sublime_plugin.TextCommand):
 
         start_time = time.time()
         timeout = 120
-        base_url = "ninetyfive.gg"
+        base_url = f"https://ninetyfive.gg/api/keys/{payment_id}"
 
         while time.time() - start_time < timeout:
             try:
-                conn = http.client.HTTPSConnection(base_url)
-                conn.request("GET", f"/api/keys/{payment_id}")
-                response = conn.getresponse()
+                response = requests.get(base_url)
 
-                if response.status == 200:
+                if response.status_code == 200:
                     data = json.loads(response.read().decode())
                     if data.get("api_key"):
                         settings = sublime.load_settings("NinetyFive.sublime-settings")
@@ -202,7 +199,6 @@ class PurchaseNinetyFiveCommand(sublime_plugin.TextCommand):
                             )
                         return
 
-                conn.close()
                 time.sleep(10)
 
             except Exception as e:
@@ -217,22 +213,15 @@ class SendNinetyFiveKeyCommand(sublime_plugin.TextCommand):
         )
 
     def on_done(self, user_input):
-        base_url = "ninetyfive.gg"
-        endpoint = "/api/resend"
-        query_params = {"email": user_input}
-        encoded_params = urllib.parse.urlencode(query_params)
-        conn = http.client.HTTPSConnection(base_url)
-        headers = {"Content-Type": "application/json"}
-        conn.request("POST", f"{endpoint}?{encoded_params}", {}, headers)
-        response = conn.getresponse()
-        if response.status == 204:
+        url = "https://ninetyfive.gg/api/resend"
+        params = {"email": user_input}
+        response = requests.post(url, params=params)
+        if response.status_code == 204:
             sublime.message_dialog("Email sent!")
         else:
             sublime.message_dialog(
                 "Failed to send email. Contact help@ninetyfive.gg for assistance."
             )
-
-        conn.close()
 
 
 class SetNinetyFiveKeyCommand(sublime_plugin.TextCommand):

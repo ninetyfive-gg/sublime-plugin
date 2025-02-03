@@ -1,7 +1,10 @@
 {
 	"*": {
 		"*": [
-			"websocket-client"
+			"websocket-client",
+			"requests",
+			"urllib3",
+			"idna"
 		]
 	}
 }
