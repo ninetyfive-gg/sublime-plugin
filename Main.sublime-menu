@@ -6,14 +6,14 @@
         "id": "package-settings",
         "children": [
           {
-            "caption": "Ninetyfive",
+            "caption": "NinetyFive",
             "children": [
               {
                 "caption": "Settings",
                 "command": "edit_settings",
                 "args": {
-                  "base_file": "${packages}/ninetyfive/Ninetyfive.sublime-settings",
-                  "default": "// settings in here override those in \"NinetyFive/Ninetyfive.sublime-settings\",\n\n{\n\t$0\n}\n"
+                  "base_file": "${packages}/NinetyFive/NinetyFive.sublime-settings",
+                  "default": "// settings in here override those in \"NinetyFive/NinetyFive.sublime-settings\",\n\n{\n\t$0\n}\n"
                 }
               }
             ]

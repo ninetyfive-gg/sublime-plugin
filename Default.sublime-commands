@@ -15,7 +15,7 @@
         "caption": "NinetyFive: Settings",
         "command": "edit_settings",
         "args": {
-            "base_file": "${packages}/ninetyfive/Ninetyfive.sublime-settings",
+            "base_file": "${packages}/NinetyFive/NinetyFive.sublime-settings",
             "default": "{\n\t$0\n}\n"
         }
     }

@@ -139,7 +139,7 @@ class WebSocketHandler:
 
 class SetNinetyfiveStatusCommand(sublime_plugin.TextCommand):
     def run(self, edit, message):
-        self.view.set_status("ninetyfive-status", "Ninetyfive: " + message)
+        self.view.set_status("ninetyfive-status", "NinetyFive: " + message)
 
 
 class TriggerNinetyfiveCompletionCommand(sublime_plugin.TextCommand):
