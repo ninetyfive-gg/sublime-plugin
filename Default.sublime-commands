@@ -5,11 +5,11 @@
     },
     {
         "caption": "NinetyFive: Purchase an API key",
-        "command": "purchase_ninetyfive"
+        "command": "purchase_ninety_five"
     },
     {
         "caption": "NinetyFive: Resend API key",
-        "command": "send_ninetyfive_key"
+        "command": "send_ninety_five_key"
     },
     {
         "caption": "NinetyFive: Settings",

@@ -62,7 +62,7 @@ class WebSocketHandler:
         if data.get("type") == "subscription-info":
             message = "Premium" if data["isPaid"] else "Free"
             sublime.active_window().active_view().run_command(
-                "set_ninetyfive_status", {"message": message}
+                "set_ninety_five_status", {"message": message}
             )
         if data.get("r") is not None:
             if data["r"] == active_request_id:
@@ -99,7 +99,7 @@ class WebSocketHandler:
                 suggestion = accumulated_completion
                 if len(suggestion.strip()) > 0:
                     view.run_command(
-                        "trigger_ninetyfive_completion",
+                        "trigger_ninety_five_completion",
                     )
 
                 # Clear state
@@ -115,7 +115,7 @@ class WebSocketHandler:
             suggestion = accumulated_completion
             if len(suggestion.strip()) > 0:
                 view.run_command(
-                    "trigger_ninetyfive_completion",
+                    "trigger_ninety_five_completion",
                 )
 
             # Clear state
@@ -137,12 +137,12 @@ class WebSocketHandler:
             self._ws_app.close()
 
 
-class SetNinetyfiveStatusCommand(sublime_plugin.TextCommand):
+class SetNinetyFiveStatusCommand(sublime_plugin.TextCommand):
     def run(self, edit, message):
         self.view.set_status("ninetyfive-status", "NinetyFive: " + message)
 
 
-class TriggerNinetyfiveCompletionCommand(sublime_plugin.TextCommand):
+class TriggerNinetyFiveCompletionCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         self.view.run_command(
             "auto_complete",
@@ -154,7 +154,7 @@ class TriggerNinetyfiveCompletionCommand(sublime_plugin.TextCommand):
         )
 
 
-class PurchaseNinetyfiveCommand(sublime_plugin.TextCommand):
+class PurchaseNinetyFiveCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         global payment_id, websocket_instance
         payment_id = str(uuid.uuid4())
@@ -210,7 +210,7 @@ class PurchaseNinetyfiveCommand(sublime_plugin.TextCommand):
                 time.sleep(2)
 
 
-class SendNinetyfiveKeyCommand(sublime_plugin.TextCommand):
+class SendNinetyFiveKeyCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         self.view.window().show_input_panel(
             "Enter a your email:", "", self.on_done, None, None
@@ -235,7 +235,7 @@ class SendNinetyfiveKeyCommand(sublime_plugin.TextCommand):
         conn.close()
 
 
-class SetNinetyfiveKeyCommand(sublime_plugin.TextCommand):
+class SetNinetyFiveKeyCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         self.view.window().show_input_panel(
             "Enter a your API Key:", "", self.on_done, None, None
