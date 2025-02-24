@@ -323,53 +323,6 @@ class NinetyFiveListener(sublime_plugin.EventListener):
             )
         )
 
-        sel = view.sel()[0]
-        position = sel.begin()
-
-        # Get prefix
-        prefix = None
-        bos = False
-        for i in range(view.rowcol(position)[0]):
-            region = sublime.Region(view.text_point(i, 0), position)
-            text = view.substr(region)
-            if len(text) >= 4096:
-                continue
-            prefix = text
-            bos = i == 0
-            break
-
-        if not prefix:
-            region = sublime.Region(
-                view.text_point(view.rowcol(position)[0], 0), position
-            )
-            prefix = view.substr(region)
-            bos = view.rowcol(position)[0] == 0
-
-        if len(prefix) > 4096:
-            prefix = prefix[-4096:]
-
-        # Get suffix
-        suffix = None
-        eos = False
-        for i in range(view.rowcol(position)[0], view.rowcol(view.size())[0] + 1):
-            region = sublime.Region(
-                position, view.text_point(i, view.rowcol(view.size())[1])
-            )
-            text = view.substr(region)
-            if len(text) >= 2048:
-                break
-            suffix = text
-            eos = i == view.rowcol(view.size())[0]
-
-        if not suffix:
-            line_end = view.line(position).end()
-            region = sublime.Region(position, line_end)
-            suffix = view.substr(region)
-            eos = view.rowcol(position)[0] == view.rowcol(view.size())[0]
-
-        if len(suffix) > 2048:
-            suffix = suffix[:2048]
-
         # Cancel everything else!
         if active_request_id:
             websocket_instance.send_message(
@@ -384,18 +337,16 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         active_request_id = str(uuid.uuid4())
         if view.window():
             directory = view.window().folders()[0]
+
+        text = view.substr(sublime.Region(0, view.sel()[0].begin()))
+        pos = len(text.encode("utf-8"))
         websocket_instance.send_message(
             json.dumps(
                 {
                     "requestId": active_request_id,
-                    "type": "completion-request",
-                    "prefix": prefix,
-                    "suffix": suffix,
-                    "path": view.file_name(),
+                    "type": "delta-completion-request",
                     "repo": directory if directory else "unknown",
-                    "folderId": view.file_name(),
-                    "eos": eos,
-                    "bos": bos,
+                    "pos": pos,
                 }
             )
         )
