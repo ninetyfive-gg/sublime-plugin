@@ -264,6 +264,15 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         )
         threading.Thread(target=websocket_instance.connect).start()
 
+    def on_load_async(self, view):
+        print("on load")
+
+        text = view.substr(sublime.Region(0, view.size()))
+
+        websocket_instance.send_message(
+            json.dumps({"type": "file-content", "path": view.file_name(), "text": text})
+        )
+
     def on_modified(self, view):
         global active_request_id, websocket_instance, accumulated_completion, suggestion
         accumulated_completion = ""
