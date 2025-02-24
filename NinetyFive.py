@@ -42,25 +42,39 @@ class WebSocketHandler:
         self.url = url
         websocket.enableTrace(False)
         self._ws_app = None
+        self._reconnect = True
+        self._reconnect_delay = 1  # Delay in seconds
 
     def connect(self):
-        try:
-            self._ws_app = websocket.WebSocketApp(
-                self.url,
-                on_message=self._on_message,
-                on_error=self._on_error,
-                on_close=self._on_close,
-                on_open=lambda ws: print("Connected to WebSocket server..."),
-            )
-            self._ws_app.run_forever()
-        except Exception as e:
-            print(f"Failed to connect: {e}")
+        while self._reconnect:
+            try:
+                self._ws_app = websocket.WebSocketApp(
+                    self.url,
+                    on_message=self._on_message,
+                    on_error=self._on_error,
+                    on_close=self._on_close,
+                    on_open=self._on_open,
+                )
+                self._ws_app.run_forever()
+            except Exception as e:
+                print(f"Failed to connect: {e}")
+
+    def _on_open(self, ws):
+        print("Connected to WebSocket server...")
+        self._reconnect_delay = 1  # Back to the lowest delay
 
     def _on_error(self, ws, error):
         print(f"Websocket Error: {error}")
+        if self._reconnect:
+            self._reconnect_delay = min(
+                self._reconnect_delay * 2, 32
+            )  # 32s as a max is ok?
 
     def _on_close(self, ws, close_status_code, message):
         print(f"Websocket closed with code {close_status_code} {message}")
+        if self._reconnect:
+            print(f"Attempting to reconnect in {self._reconnect_delay} seconds...")
+            time.sleep(self._reconnect_delay)
 
     def _on_message(self, ws, message):
         global active_request_id, suggestion
@@ -245,6 +259,7 @@ class WebSocketHandler:
                 print(f"Failed to send message: {e}")
 
     def close(self):
+        self._reconnect = False
         if self._ws_app:
             self._ws_app.close()
 
