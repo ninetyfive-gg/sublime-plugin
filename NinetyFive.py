@@ -18,6 +18,7 @@ payment_id = None
 active_request_id = None
 accumulated_completion = ""
 suggestion = ""
+active_commit = None
 
 
 def plugin_unloaded():
@@ -267,6 +268,8 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         threading.Thread(target=websocket_instance.connect).start()
 
     def on_load_async(self, view):
+        global active_commit
+        
         try:
             cwd = view.window().folders()[0]
             result = subprocess.check_output(
@@ -275,24 +278,24 @@ class NinetyFiveListener(sublime_plugin.EventListener):
 
             branch, hash = result
 
-            if hash and branch:
-                project = os.path.basename(view.window().folders()[0])
-                websocket_instance.send_message(
-                    json.dumps(
-                        {
-                            "type": "set-workspace",
-                            "commitHash": hash,
-                            "path": view.window().folders()[0],
-                            "name": f"{project}/{branch}",
-                        }
+            if hash != active_commit:
+                active_commit = hash
+                if hash and branch:
+                    project = os.path.basename(view.window().folders()[0])
+                    websocket_instance.send_message(
+                        json.dumps(
+                            {
+                                "type": "set-workspace",
+                                "commitHash": hash,
+                                "path": view.window().folders()[0],
+                                "name": f"{project}/{branch}",
+                            }
+                        )
                     )
-                )
-            else:
-                websocket_instance.send_message(json.dumps({"type": "set-workspace"}))
+                else:
+                    websocket_instance.send_message(json.dumps({"type": "set-workspace"}))
         except Exception as e:
             print("failed setting workspace", e)
-
-        # git
 
     def on_modified(self, view):
         global active_request_id, websocket_instance, accumulated_completion, suggestion
