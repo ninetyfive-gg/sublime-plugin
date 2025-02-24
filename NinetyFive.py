@@ -70,7 +70,7 @@ class WebSocketHandler:
         data_type = data.get("type")
 
         if data_type == "subscription-info":
-            message = "Premium" if data["isPaid"] else "Free"
+            message = data["name"]
             sublime.active_window().active_view().run_command(
                 "set_ninety_five_status", {"message": message}
             )
@@ -252,7 +252,7 @@ class WebSocketHandler:
 
 class SetNinetyFiveStatusCommand(sublime_plugin.TextCommand):
     def run(self, edit, message):
-        self.view.set_status("ninetyfive-status", "NinetyFive: " + message)
+        self.view.set_status("ninetyfive-status", message)
 
 
 class TriggerNinetyFiveCompletionCommand(sublime_plugin.TextCommand):
