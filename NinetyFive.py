@@ -1,5 +1,7 @@
 import http.client
 import json
+import os
+import subprocess
 import threading
 import time
 import uuid
@@ -265,13 +267,32 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         threading.Thread(target=websocket_instance.connect).start()
 
     def on_load_async(self, view):
-        print("on load")
+        try:
+            cwd = view.window().folders()[0]
+            result = subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD", "HEAD"], cwd=cwd, text=True
+            ).splitlines()
 
-        text = view.substr(sublime.Region(0, view.size()))
+            branch, hash = result
 
-        websocket_instance.send_message(
-            json.dumps({"type": "file-content", "path": view.file_name(), "text": text})
-        )
+            if hash and branch:
+                project = os.path.basename(view.window().folders()[0])
+                websocket_instance.send_message(
+                    json.dumps(
+                        {
+                            "type": "set-workspace",
+                            "commitHash": hash,
+                            "path": view.window().folders()[0],
+                            "name": f"{project}/{branch}",
+                        }
+                    )
+                )
+            else:
+                websocket_instance.send_message(json.dumps({"type": "set-workspace"}))
+        except Exception as e:
+            print("failed setting workspace", e)
+
+        # git
 
     def on_modified(self, view):
         global active_request_id, websocket_instance, accumulated_completion, suggestion
