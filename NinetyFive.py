@@ -1,4 +1,7 @@
+import base64
+import gzip
 import http.client
+import io
 import json
 import os
 import subprocess
@@ -10,6 +13,8 @@ import requests
 import sublime
 import sublime_plugin
 import websocket
+
+from .git import parse_numstat, parse_tree
 
 # Since we're gonna use `plugin_unloaded` to close the connection, we need the ws handler available
 websocket_instance = None
@@ -61,12 +66,118 @@ class WebSocketHandler:
     def _on_message(self, ws, message):
         global active_request_id, suggestion
         data = json.loads(message)
-        if data.get("type") == "subscription-info":
+
+        data_type = data.get("type")
+
+        if data_type == "subscription-info":
             message = "Premium" if data["isPaid"] else "Free"
             sublime.active_window().active_view().run_command(
                 "set_ninety_five_status", {"message": message}
             )
-        if data.get("r") is not None:
+        elif data_type == "get-commit":
+            hash = data.get("commitHash")
+
+            cwd = sublime.active_window().folders()[0]
+
+            if cwd is None or cwd == "":
+                return
+
+            try:
+                raw_numstat = subprocess.check_output(
+                    ["git", "show", "--numstat", hash], cwd=cwd, text=True
+                ).strip()
+
+                numstat = parse_numstat(raw_numstat)
+
+                commit = subprocess.check_output(
+                    ["git", "log", "-s", "--format=%P%n%B", hash], cwd=cwd, text=True
+                ).strip()
+
+                parents_line, message = commit.split("\n", 1)
+                parents = parents_line.split()
+
+                raw_tree = subprocess.check_output(
+                    ["git", "ls-tree", "-r", "-l", "--full-tree", hash],
+                    cwd=cwd,
+                    text=True,
+                ).strip()
+
+                tree = parse_tree(raw_tree)
+
+                files = [
+                    {
+                        **file,
+                        **next((lsf for lsf in tree if lsf["file"] == file["to"]), {}),
+                    }
+                    for file in numstat
+                    if file["additions"] is not None and file["deletions"] is not None
+                ]
+
+                message = {"parents": parents, "message": message, "files": files}
+
+                if websocket_instance:
+                    websocket_instance.send_message(
+                        json.dumps(
+                            {
+                                "type": "commit",
+                                "commitHash": hash,
+                                "commit": message,
+                            }
+                        )
+                    )
+            except Exception as e:
+                print("failed to send commit", e)
+
+        elif data_type == "get-blob":
+            hash = data.get("commitHash")
+            path = data.get("path")
+            object_hash = data.get("objectHash")
+            cwd = sublime.active_window().folders()[0]
+
+            if cwd is None or cwd == "":
+                return
+
+            try:
+                blob = subprocess.check_output(
+                    ["git", "show", f"{hash}:{path}"], cwd=cwd
+                )
+
+                diff = subprocess.check_output(
+                    ["git", "diff", f"{hash}^", hash, "--", path],
+                    cwd=cwd,
+                )
+
+                compressed_blob = io.BytesIO()
+                with gzip.GzipFile(fileobj=compressed_blob, mode="wb") as f:
+                    f.write(blob)
+                encoded_blob = base64.b64encode(compressed_blob.getvalue()).decode(
+                    "utf-8"
+                )
+
+                compressed_diff = io.BytesIO()
+                with gzip.GzipFile(fileobj=compressed_diff, mode="wb") as f:
+                    f.write(diff)
+                encoded_diff = base64.b64encode(compressed_diff.getvalue()).decode(
+                    "utf-8"
+                )
+
+                if websocket_instance:
+                    websocket_instance.send_message(
+                        json.dumps(
+                            {
+                                "type": "blob",
+                                "commitHash": hash,
+                                "objectHash": object_hash,
+                                "path": path,
+                                "blob": encoded_blob,
+                                "diff": encoded_diff,
+                            }
+                        )
+                    )
+            except Exception as e:
+                print("failed to send blob", e)
+
+        elif data.get("r") is not None:
             if data["r"] == active_request_id:
                 completion_fragment = data["v"]
                 if isinstance(completion_fragment, str):
