@@ -1,6 +1,5 @@
 import base64
 import gzip
-import http.client
 import io
 import json
 import os
