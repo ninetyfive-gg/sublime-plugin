@@ -1,5 +1,10 @@
+import base64
+import gzip
 import http.client
+import io
 import json
+import os
+import subprocess
 import threading
 import time
 import uuid
@@ -9,6 +14,8 @@ import sublime
 import sublime_plugin
 import websocket
 
+from .git import parse_numstat, parse_tree
+
 # Since we're gonna use `plugin_unloaded` to close the connection, we need the ws handler available
 websocket_instance = None
 payment_id = None
@@ -16,6 +23,7 @@ payment_id = None
 active_request_id = None
 accumulated_completion = ""
 suggestion = ""
+active_commit = None
 
 
 def plugin_unloaded():
@@ -58,12 +66,118 @@ class WebSocketHandler:
     def _on_message(self, ws, message):
         global active_request_id, suggestion
         data = json.loads(message)
-        if data.get("type") == "subscription-info":
-            message = "Premium" if data["isPaid"] else "Free"
+
+        data_type = data.get("type")
+
+        if data_type == "subscription-info":
+            message = data["name"]
             sublime.active_window().active_view().run_command(
                 "set_ninety_five_status", {"message": message}
             )
-        if data.get("r") is not None:
+        elif data_type == "get-commit":
+            hash = data.get("commitHash")
+
+            cwd = sublime.active_window().folders()[0]
+
+            if cwd is None or cwd == "":
+                return
+
+            try:
+                raw_numstat = subprocess.check_output(
+                    ["git", "show", "--numstat", hash], cwd=cwd, text=True
+                ).strip()
+
+                numstat = parse_numstat(raw_numstat)
+
+                commit = subprocess.check_output(
+                    ["git", "log", "-s", "--format=%P%n%B", hash], cwd=cwd, text=True
+                ).strip()
+
+                parents_line, message = commit.split("\n", 1)
+                parents = parents_line.split()
+
+                raw_tree = subprocess.check_output(
+                    ["git", "ls-tree", "-r", "-l", "--full-tree", hash],
+                    cwd=cwd,
+                    text=True,
+                ).strip()
+
+                tree = parse_tree(raw_tree)
+
+                files = [
+                    {
+                        **file,
+                        **next((lsf for lsf in tree if lsf["file"] == file["to"]), {}),
+                    }
+                    for file in numstat
+                    if file["additions"] is not None and file["deletions"] is not None
+                ]
+
+                message = {"parents": parents, "message": message, "files": files}
+
+                if websocket_instance:
+                    websocket_instance.send_message(
+                        json.dumps(
+                            {
+                                "type": "commit",
+                                "commitHash": hash,
+                                "commit": message,
+                            }
+                        )
+                    )
+            except Exception as e:
+                print("failed to send commit", e)
+
+        elif data_type == "get-blob":
+            hash = data.get("commitHash")
+            path = data.get("path")
+            object_hash = data.get("objectHash")
+            cwd = sublime.active_window().folders()[0]
+
+            if cwd is None or cwd == "":
+                return
+
+            try:
+                blob = subprocess.check_output(
+                    ["git", "show", f"{hash}:{path}"], cwd=cwd
+                )
+
+                diff = subprocess.check_output(
+                    ["git", "diff", f"{hash}^", hash, "--", path],
+                    cwd=cwd,
+                )
+
+                compressed_blob = io.BytesIO()
+                with gzip.GzipFile(fileobj=compressed_blob, mode="wb") as f:
+                    f.write(blob)
+                encoded_blob = base64.b64encode(compressed_blob.getvalue()).decode(
+                    "utf-8"
+                )
+
+                compressed_diff = io.BytesIO()
+                with gzip.GzipFile(fileobj=compressed_diff, mode="wb") as f:
+                    f.write(diff)
+                encoded_diff = base64.b64encode(compressed_diff.getvalue()).decode(
+                    "utf-8"
+                )
+
+                if websocket_instance:
+                    websocket_instance.send_message(
+                        json.dumps(
+                            {
+                                "type": "blob",
+                                "commitHash": hash,
+                                "objectHash": object_hash,
+                                "path": path,
+                                "blob": encoded_blob,
+                                "diff": encoded_diff,
+                            }
+                        )
+                    )
+            except Exception as e:
+                print("failed to send blob", e)
+
+        elif data.get("r") is not None:
             if data["r"] == active_request_id:
                 completion_fragment = data["v"]
                 if isinstance(completion_fragment, str):
@@ -138,7 +252,7 @@ class WebSocketHandler:
 
 class SetNinetyFiveStatusCommand(sublime_plugin.TextCommand):
     def run(self, edit, message):
-        self.view.set_status("ninetyfive-status", "NinetyFive: " + message)
+        self.view.set_status("ninetyfive-status", message)
 
 
 class TriggerNinetyFiveCompletionCommand(sublime_plugin.TextCommand):
@@ -264,6 +378,40 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         )
         threading.Thread(target=websocket_instance.connect).start()
 
+    def on_load_async(self, view):
+        global active_commit
+
+        try:
+            cwd = view.window().folders()[0]
+            branch = subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd, text=True
+            ).strip()
+
+            hash = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=cwd, text=True
+            ).strip()
+
+            if hash != active_commit:
+                active_commit = hash
+                if hash and branch:
+                    project = os.path.basename(view.window().folders()[0])
+                    websocket_instance.send_message(
+                        json.dumps(
+                            {
+                                "type": "set-workspace",
+                                "commitHash": hash,
+                                "path": view.window().folders()[0],
+                                "name": f"{project}/{branch}",
+                            }
+                        )
+                    )
+                else:
+                    websocket_instance.send_message(
+                        json.dumps({"type": "set-workspace"})
+                    )
+        except Exception as e:
+            print("failed setting workspace", e)
+
     def on_modified(self, view):
         global active_request_id, websocket_instance, accumulated_completion, suggestion
         accumulated_completion = ""
@@ -277,52 +425,16 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         ):
             return
 
-        sel = view.sel()[0]
-        position = sel.begin()
-
-        # Get prefix
-        prefix = None
-        bos = False
-        for i in range(view.rowcol(position)[0]):
-            region = sublime.Region(view.text_point(i, 0), position)
-            text = view.substr(region)
-            if len(text) >= 4096:
-                continue
-            prefix = text
-            bos = i == 0
-            break
-
-        if not prefix:
-            region = sublime.Region(
-                view.text_point(view.rowcol(position)[0], 0), position
+        # Send the file
+        websocket_instance.send_message(
+            json.dumps(
+                {
+                    "type": "file-content",
+                    "path": view.window().folders()[0],
+                    "text": view.substr(sublime.Region(0, view.size())),
+                }
             )
-            prefix = view.substr(region)
-            bos = view.rowcol(position)[0] == 0
-
-        if len(prefix) > 4096:
-            prefix = prefix[-4096:]
-
-        # Get suffix
-        suffix = None
-        eos = False
-        for i in range(view.rowcol(position)[0], view.rowcol(view.size())[0] + 1):
-            region = sublime.Region(
-                position, view.text_point(i, view.rowcol(view.size())[1])
-            )
-            text = view.substr(region)
-            if len(text) >= 2048:
-                break
-            suffix = text
-            eos = i == view.rowcol(view.size())[0]
-
-        if not suffix:
-            line_end = view.line(position).end()
-            region = sublime.Region(position, line_end)
-            suffix = view.substr(region)
-            eos = view.rowcol(position)[0] == view.rowcol(view.size())[0]
-
-        if len(suffix) > 2048:
-            suffix = suffix[:2048]
+        )
 
         # Cancel everything else!
         if active_request_id:
@@ -338,18 +450,16 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         active_request_id = str(uuid.uuid4())
         if view.window():
             directory = view.window().folders()[0]
+
+        text = view.substr(sublime.Region(0, view.sel()[0].begin()))
+        pos = len(text.encode("utf-8"))
         websocket_instance.send_message(
             json.dumps(
                 {
                     "requestId": active_request_id,
-                    "type": "completion-request",
-                    "prefix": prefix,
-                    "suffix": suffix,
-                    "path": view.file_name(),
+                    "type": "delta-completion-request",
                     "repo": directory if directory else "unknown",
-                    "folderId": view.file_name(),
-                    "eos": eos,
-                    "bos": bos,
+                    "pos": pos,
                 }
             )
         )
