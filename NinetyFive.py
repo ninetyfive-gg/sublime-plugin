@@ -269,7 +269,7 @@ class NinetyFiveListener(sublime_plugin.EventListener):
 
     def on_load_async(self, view):
         global active_commit
-        
+
         try:
             cwd = view.window().folders()[0]
             result = subprocess.check_output(
@@ -293,7 +293,9 @@ class NinetyFiveListener(sublime_plugin.EventListener):
                         )
                     )
                 else:
-                    websocket_instance.send_message(json.dumps({"type": "set-workspace"}))
+                    websocket_instance.send_message(
+                        json.dumps({"type": "set-workspace"})
+                    )
         except Exception as e:
             print("failed setting workspace", e)
 
@@ -309,6 +311,17 @@ class NinetyFiveListener(sublime_plugin.EventListener):
             or view.window().active_view() != view
         ):
             return
+
+        # Send the file
+        websocket_instance.send_message(
+            json.dumps(
+                {
+                    "type": "file-content",
+                    "path": view.window().folders()[0],
+                    "text": view.substr(sublime.Region(0, view.size())),
+                }
+            )
+        )
 
         sel = view.sel()[0]
         position = sel.begin()
