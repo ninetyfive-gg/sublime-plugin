@@ -272,11 +272,13 @@ class NinetyFiveListener(sublime_plugin.EventListener):
 
         try:
             cwd = view.window().folders()[0]
-            result = subprocess.check_output(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD", "HEAD"], cwd=cwd, text=True
-            ).splitlines()
+            branch = subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd, text=True
+            ).strip()
 
-            branch, hash = result
+            hash = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=cwd, text=True
+            ).strip()
 
             if hash != active_commit:
                 active_commit = hash
