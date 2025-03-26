@@ -439,6 +439,30 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         ):
             return
 
+        cwd = sublime.active_window().folders()[0]
+
+        if cwd is None or cwd == "":
+            return
+
+        try:
+            print("about to check ignore", view.file_name())
+            raw_ignore = subprocess.check_output(
+                ["git", "check-ignore", view.file_name()], cwd=cwd, text=True
+            ).strip()
+
+            # Do not leak ignored files
+            if len(raw_ignore) > 0:
+                print("file is ignored")
+                return
+        except subprocess.CalledProcessError as e:
+            if e.returncode == 1:
+                # Exit code 1 means its not ignored
+                pass
+            else:
+                raise
+        except Exception as e:
+            print("failed to check-ignore", e)
+
         # Send the file
         websocket_instance.send_message(
             json.dumps(
