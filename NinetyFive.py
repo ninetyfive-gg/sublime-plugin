@@ -388,7 +388,7 @@ class NinetyFiveListener(sublime_plugin.EventListener):
         settings.set("user_id", user_id)
 
         websocket_instance = WebSocketHandler(
-            f"{endpoint}?user_id={user_id}&api_key={api_key}"
+            f"{endpoint}?user_id={user_id}&api_key={api_key}&editor=sublime"
         )
         threading.Thread(target=websocket_instance.connect).start()
 
