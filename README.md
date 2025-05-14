@@ -4,6 +4,10 @@ NinetyFive is a simple code completion extension.
 - Code completions.
 - (Work in progress) Training based on your projects to improve completions.
 
+## Installation
+
+The easiest way to install NinetyFive is through [PackageControl](https://packagecontrol.io/packages/NinetyFive).
+
 ## Useful Info
 
 NinetyFive sends your code to our servers whenever you perform modifications to the code in your open text editors, this code is then used to suggest completions based on the file content and your current position.
